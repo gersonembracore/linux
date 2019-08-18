@@ -1,0 +1,300 @@
+Instituto Federal Catarinense
+-----------------------------
+Disciplina: 	Administração de Servidores
+Professor:	Alexandre de Aguiar Amaral
+Data:		18 de agosto de 2019
+Aluno:		Gerson Pereira (gerson@embracore.com.br)
+
+
+
+Preparação para simular um ambiente de rede com servidor LINUX e Cliente.
+
+
+
+1) Baixar as seguintes imagens para realizar as instalações das máquinas virtuais
+
+	* Ubuntu Server 16.04 LTS 64bits
+	-> http://releases.ubuntu.com/16.04.6/ubuntu-16.04.6-server-amd64.iso
+
+ 
+	* Lubuntu 19.04 Desktop 64 bits
+	-> http://cdimage.ubuntu.com/lubuntu/releases/19.04/release/lubuntu-19.04-desktop-amd64.iso
+
+
+
+2) 	Configurar o Virtual BOX
+	-> Host Network Manager
+	-> Criar interface vBoxNet e habilitar o serviço DHCP Server
+
+
+3) Criar o Gateway
+	-> Criar uma máquina linux com Ubuntu Server 16.04 LTS
+		* 1 cpu
+		* 512 RAM
+		* HD 8GB
+		* 1 interface de rede: Placa de rede exclusiva de hospedeiro (Host Only)
+		* 1 interface de rede: NAT
+		* 1 interface de rede: Rede interna
+		* Desativar audio
+		
+		Em armazenamento, selecionar a ISO do Ubuntu Server 16.04 LTS
+
+
+	-> A primeira coisa que devemos fazer após instalar o LINUX, é redefinir a senha
+	   do 'root'.
+	
+		O comando abaixo permite redefinir a senha do usuário, através do 
+		usuário que foi criado no momento da instalação
+
+		$ sudo passwd
+
+
+
+
+		Após a redefinição de senha do 'root', podemos logar como 'root'
+		e ajustar o sistema. Para entrar como root, digite o comando abaixo:
+
+		$ su
+		
+
+
+		O primeiro ajuste a ser realizado, será no arquivo de configuração do
+		servidor SSH.
+
+		Para que seja possível entrar diretamente com o usuário 'root', é necessário 
+		realizar um ajuste no arquivo '/etc/ssh/sshd_config', alterando a seguinte linha:
+
+			Onde encontra-se:
+				PermitRootLogin prohibit-password
+
+				mude para 
+				
+				PermitRootLogin yes
+
+			Salve, feche o arquivo e reinicie o servidor SSH com o comando abaixo:
+
+			# /etc/init.d/ssh restart 
+		
+
+		* Agora é possível acessar por SSH a partir da máquina física e copiar as 
+		  configurações abaixo e colar na VM para usar como modelo.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	-> Agora vamos realizar as configurações de rede.
+
+	   Para facilitar o 'Copiar e Colar', vamos acessar o servidor virtual por SSH.
+
+
+		* No arquivo /etc/network/interfaces, será necessário especificar os endereços de 
+		  IP, como no exemplo abaixo:
+
+		  #-------------------------------------------------------------------------------
+			# This file describes the network interfaces available on your system
+			# and how to activate them. For more information, see interfaces(5).
+
+			source /etc/network/interfaces.d/*
+
+
+			# The loopback network interface
+			auto lo
+			iface lo inet loopback
+
+
+			# Configuração da interface (placa de rede de hospedeiro - Host Only)
+			# Esta interface de rede permitirá você acessar por SSH, a partir da 
+			# máquina física, este servidor gateway.
+			#--------------------------------------------------------------------
+			auto enp0s3
+			iface enp0s3 inet static
+				address         192.168.56.50
+				netmask         255.255.255.0
+				network         192.168.56.0
+
+
+
+			# Configuração da interface (NAT)
+			# Esta placa dará acesso a internet
+			#--------------------------------------------------------------------
+			auto enp0s8
+			iface enp0s8 inet dhcp
+
+
+
+
+
+			# Configuração da interface (Rede Interna)
+			# Esta interface comunicação com outras máquinas virtuais
+			# que tem sua rede configurada como "Rede interna"
+			# Esta interface também ofertará endereços IP por meio
+			# do DHCP Server
+			#--------------------------------------------------------------------
+			auto enp0s9
+			iface enp0s9 inet static
+				address         10.0.0.1
+				netmask         255.255.255.0
+
+
+		  #-------------------------------------------------------------------------------
+
+
+
+	-> Depois de reiniciar o gateway, vamos configurar o servidor DHCP, como no exemplo abaixo.
+	   Antes de criar o arquivo de configuração do servidor DHCP, é necessário instalá-lo.
+
+		# apt-get install -y isc-dhcp-server
+
+
+
+
+		* Agora, vamos configurar o servidor como no exemplo abaixo.
+
+		  Edite o arquivo /etc/dhcp/dhcpd.conf e utilize a configuração abaixo como exemplo.
+
+		  #---------INICIO----------#
+
+			#deny unknown-clients;
+			ddns-update-style       none;
+			update-static-leases    on;
+			ignore                  client-updates;
+			default-lease-time      3600;
+			max-lease-time          43200;
+			authoritative;
+			option wpad-url code 252 = text;
+			ddns-domainname "testeifc.net.";
+			option domain-name "testeifc.net.";
+			subnet 10.0.0.0 netmask 255.255.255.0 
+				{
+					INTERFACES="enp0s9";
+					range 10.0.0.100 10.0.0.199;
+					option routers 10.0.0.1;
+					option domain-name-servers 8.8.8.8,8.8.4.4;
+					option broadcast-address 10.0.0.255;
+					option wpad-url "http://10.0.0.1/wpad.dat\n";
+
+						host note_do_gerson  
+							{ 
+								hardware ethernet 64:1c:67:97:79:f3;
+								fixed-address 10.0.0.228;
+							}
+
+				}
+
+		  #---------FIM-------------#
+			
+
+
+
+
+	-> Para finalizar, é necessário criar um script e colocar na inicialização  do sistema operacional
+	   para que seja executado e permita o compartilhamento da intenet para a máquina 'Cliente'
+	
+	   Este arquivo receberá no nome de 'firewall' e será colocado dentro da pasta '/etc/init.d/'
+
+	   Use o modelo abaixo parar criar o seu script.
+
+
+		#!/bin/bash
+
+		wan='enp0s8'
+		lan='enp0s9'
+
+		
+		echo "Ativando firewall..."
+
+			
+		# Carrega o modulos Iptables
+		modprobe iptable_filter
+		modprobe iptable_nat
+
+			
+		# Regra para compartilhar a Internet (NAT)
+		#-----------------------------------------
+		iptables -t nat -A POSTROUTING 	-o $wan 				-j MASQUERADE
+		iptables 	-A FORWARD   	-m state --state RELATED,ESTABLISHED 	-j ACCEPT
+		iptables 	-A FORWARD 	-i $lan -o $wan 			-j ACCEPT
+
+			
+		# Habilita o roteamento entre as interfaces
+		echo 1 > /proc/sys/net/ipv4/ip_forward
+
+			
+		echo "Firewall Ativado..."
+
+
+
+
+
+	->  	Depois de criar o arquivos para carregar as regras do firewall, que neste caso chamamos de 'firewall',
+		e que está dentro da pasta /etc/init.d/, agora vamos dar permissão de 'execução' e na sequência, vamos
+		colocar para ser executado quando o LINUX iniciar.
+
+
+		-> Primeiramente, entre no diretório /etc/init.d/
+
+			# cd /etc/init.d
+
+
+
+		-> Para aplicar permissão de execução, proceda com o comando abaixo:
+		
+			# chmod +x /etc/init.d/firewall
+
+
+		
+		-> Para colocá-lo como inicializável, proceda com o comando abaixo
+
+			# update-rc.d firewall defaults
+
+
+
+		-> Agora o servidor pode ser reiniciado e se todas configurações estiverem
+		   corretas, a máquina 'cliente' recebrá um endereço e IP e estará
+	 	   navegando na internet.
+
+
+
+ 
+4) Criar a máquina cliente
+	-> Criar uma máquina para simular um cliente do Servidor gateway
+		* 1 cpu
+		* 750 RAM
+		* HD 15GB
+		* 1 interface de rede: Rede interna
+		* Desativar audio
+		
+		Em armazenamento, selecionar a ISO do Lubuntu 19.04
+
+   
+	   Automaticamente a máquina vai receber um endereço IP na classe 10.0.0.0/24
+	   e vai funcionar a internet.
+
+
+5) 	Através da interface 'Placa de rede exclusiva de hospedeiro (host only)', configurada
+	com o endereço IP 192.168.56.50 no gateway, você terá acesso por SSH, diretamente da 
+	sua máquina física. Para acessar diretamente, use o exemplo abaixo.
+
+	# ssh root@192.168.56.50
+
+	-> Entre com a senha do root.
+
+
+
+
+
+Pronto!
+
+
+
+
